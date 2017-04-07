@@ -1,33 +1,47 @@
 package com.utility.api.core.ocr;
 
-import com.google.common.io.Files;
-import lombok.extern.log4j.Log4j;
-import org.bytedeco.javacpp.BytePointer;
-import org.bytedeco.javacpp.lept;
-import org.bytedeco.javacpp.tesseract;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
+import static org.bytedeco.javacpp.lept.pixDestroy;
+import static org.bytedeco.javacpp.lept.pixRead;
 
-import javax.annotation.PreDestroy;
 import java.io.File;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.util.UUID;
 
-import static org.bytedeco.javacpp.lept.pixDestroy;
-import static org.bytedeco.javacpp.lept.pixRead;
+import javax.annotation.PreDestroy;
+
+import lombok.extern.log4j.Log4j;
+
+import org.apache.commons.lang3.StringUtils;
+import org.bytedeco.javacpp.BytePointer;
+import org.bytedeco.javacpp.lept;
+import org.bytedeco.javacpp.tesseract.TessBaseAPI;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+
+import com.google.common.io.Files;
+import com.utility.api.core.ocr.exception.OcrException;
+import com.utility.api.core.ocr.utils.ImageConverter;
+import com.utility.api.core.ocr.utils.ImageProcessor;
+import com.utility.api.core.ocr.utils.SupportedMimeType;
 
 @Log4j
 @Component
 public class OcrEngine {
 
     private static final String TMP_PREFIX = "tmp";
+    private static final String UTF_8_ENCODING = "UTF-8";
 
-    private tesseract.TessBaseAPI engine;
+    private final TessBaseAPI engine;
+    private final ImageProcessor processor;
+    private final ImageConverter converter;
+
 
     @Autowired
-    public OcrEngine(OcrEngineProperties properties) throws OcrException {
-        engine = new tesseract.TessBaseAPI();
+    public OcrEngine(OcrEngineProperties properties, ImageProcessor processor, ImageConverter converter) throws OcrException {
+        this.processor = processor;
+        this.converter = converter;
+        this.engine = new TessBaseAPI();
         // Initialize tesseract-ocr
         if (engine.Init(properties.getConfigPath() , properties.getTrainedLocale()) != 0) {
             throw new OcrException("Could not initialize OcrEngine");
@@ -50,7 +64,7 @@ public class OcrEngine {
      */
     public String readImage(byte[] image) throws OcrException {
         //Create temporary file
-        File file = createTemporaryFile(image);
+        File file = createTemporaryFile(getProcessedImage(image));
 
         // Open input image with leptonica library
         lept.PIX pix = pixRead(file.getAbsolutePath());
@@ -66,17 +80,44 @@ public class OcrEngine {
     }
 
     /**
+     * Check the media type of the file to be processed. If a PDF is found, then it's converted to a TIFF image for the
+     * engine to process
+     *
+     * Images are scaled using {@link ImageProcessor#scaleImage(byte[])} before returned to optimize the engine recognition
+     *
+     * @param image    The image to be processed
+     *
+     * @return An optimized version of the image to be processed by the engine
+     *
+     * @throws OcrException if an unsupported media type is detected
+     */
+    private byte[] getProcessedImage(byte[] image) throws OcrException {
+        SupportedMimeType mime = processor.getMimeType(image);
+        if (mime == null) {
+            throw new OcrException("Unsupported media type");
+        }
+        byte[] content;
+
+        if (SupportedMimeType.PDF.equals(mime)) {
+            content = converter.convertPDFToImage(image);
+        } else {
+            content = image;
+        }
+        return processor.scaleImage(content);
+    }
+
+    /**
      * Returns the value of the text recognized by the engine in UTF-8 format
      *
      * @param pointer     Engine process result
      */
     private String getResult(BytePointer pointer) {
         if (pointer == null) {
-            return "";
+            return StringUtils.EMPTY;
         }
         String result;
         try {
-            result = new String(pointer.getStringBytes(), "UTF-8");
+            result = new String(pointer.getStringBytes(), UTF_8_ENCODING);
         } catch (UnsupportedEncodingException e) {
             result = pointer.getString();
         }
@@ -96,7 +137,7 @@ public class OcrEngine {
      *         is available for the engine to process
      */
     private File createTemporaryFile(byte[] image) throws OcrException {
-        File file = new File(TMP_PREFIX + UUID.randomUUID());
+        File file = new File(TMP_PREFIX + UUID.randomUUID() + ".png");
         try {
             Files.write(image, file);
         } catch (IOException e) {

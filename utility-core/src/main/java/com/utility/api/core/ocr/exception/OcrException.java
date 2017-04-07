@@ -1,4 +1,4 @@
-package com.utility.api.core.ocr;
+package com.utility.api.core.ocr.exception;
 
 public class OcrException extends Exception {
 
