@@ -11,5 +11,6 @@ public class OcrEngineProperties {
 
     private String configPath;
     private String trainedLocale;
+    private Boolean keepTempFiles;
 
 }

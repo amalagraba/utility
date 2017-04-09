@@ -1,5 +1,6 @@
 package com.utility.api.controller;
 
+import com.utility.api.entity.TicketLine;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -9,6 +10,7 @@ import org.springframework.web.multipart.MultipartFile;
 import com.utility.api.core.service.StorageScannerService;
 
 import java.io.IOException;
+import java.util.List;
 
 @RestController
 @RequestMapping("/storage")
@@ -22,7 +24,7 @@ class StorageController {
     }
 
     @PostMapping("/scan")
-    public String scan(@RequestBody MultipartFile file) throws IOException {
+    public List<TicketLine> scan(@RequestBody MultipartFile file) throws IOException {
         return scannerService.scan(file.getBytes());
     }
 }

@@ -1,17 +1,11 @@
 package com.utility.api.core.ocr;
 
-import static org.bytedeco.javacpp.lept.pixDestroy;
-import static org.bytedeco.javacpp.lept.pixRead;
-
-import java.io.File;
-import java.io.IOException;
-import java.io.UnsupportedEncodingException;
-import java.util.UUID;
-
-import javax.annotation.PreDestroy;
-
+import com.utility.api.core.ocr.exception.OcrException;
+import com.utility.api.core.ocr.processor.ImageProcessor;
+import com.utility.api.core.ocr.utils.FileUtils;
+import com.utility.api.core.ocr.utils.SupportedMimeType;
 import lombok.extern.log4j.Log4j;
-
+import org.apache.commons.lang3.BooleanUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.bytedeco.javacpp.BytePointer;
 import org.bytedeco.javacpp.lept;
@@ -19,29 +13,30 @@ import org.bytedeco.javacpp.tesseract.TessBaseAPI;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import com.google.common.io.Files;
-import com.utility.api.core.ocr.exception.OcrException;
-import com.utility.api.core.ocr.utils.ImageConverter;
-import com.utility.api.core.ocr.utils.ImageProcessor;
-import com.utility.api.core.ocr.utils.SupportedMimeType;
+import javax.annotation.PreDestroy;
+import java.io.File;
+import java.io.UnsupportedEncodingException;
+
+import static com.utility.api.core.ocr.utils.FileUtils.deleteTemporaryFile;
+import static org.bytedeco.javacpp.lept.pixDestroy;
+import static org.bytedeco.javacpp.lept.pixRead;
 
 @Log4j
 @Component
 public class OcrEngine {
 
-    private static final String TMP_PREFIX = "tmp";
     private static final String UTF_8_ENCODING = "UTF-8";
 
     private final TessBaseAPI engine;
     private final ImageProcessor processor;
-    private final ImageConverter converter;
+    private final boolean keepFiles;
 
 
     @Autowired
-    public OcrEngine(OcrEngineProperties properties, ImageProcessor processor, ImageConverter converter) throws OcrException {
+    public OcrEngine(OcrEngineProperties properties, ImageProcessor processor) throws OcrException {
         this.processor = processor;
-        this.converter = converter;
         this.engine = new TessBaseAPI();
+        this.keepFiles = BooleanUtils.isTrue(properties.getKeepTempFiles());
         // Initialize tesseract-ocr
         if (engine.Init(properties.getConfigPath() , properties.getTrainedLocale()) != 0) {
             throw new OcrException("Could not initialize OcrEngine");
@@ -63,20 +58,26 @@ public class OcrEngine {
      * @throws OcrException when the image cannot be processed
      */
     public String readImage(byte[] image) throws OcrException {
-        //Create temporary file
-        File file = createTemporaryFile(getProcessedImage(image));
+        try {
+            //Create temporary file
+            File file = FileUtils.createTemporaryFile(getProcessedImage(image));
 
-        // Open input image with leptonica library
-        lept.PIX pix = pixRead(file.getAbsolutePath());
-        engine.SetImage(pix);
+            // Open input image with leptonica library
+            lept.PIX pix = pixRead(file.getAbsolutePath());
+            engine.SetImage(pix);
 
-        // Get OCR result
-        String result = getResult(engine.GetUTF8Text());
+            // Get OCR result
+            String result = getResult(engine.GetUTF8Text());
 
-        deleteTemporaryFile(file);
-        pixDestroy(pix);
+            if (!keepFiles) {
+                deleteTemporaryFile(file);
+            }
+            pixDestroy(pix);
 
-        return result;
+            return result;
+        } catch (Exception e) {
+            throw new OcrException("Could not process image for text recognition", e);
+        }
     }
 
     /**
@@ -96,14 +97,7 @@ public class OcrEngine {
         if (mime == null) {
             throw new OcrException("Unsupported media type");
         }
-        byte[] content;
-
-        if (SupportedMimeType.PDF.equals(mime)) {
-            content = converter.convertPDFToImage(image);
-        } else {
-            content = image;
-        }
-        return processor.scaleImage(content);
+        return processor.scaleImage(image);
     }
 
     /**
@@ -124,39 +118,5 @@ public class OcrEngine {
         pointer.deallocate();
 
         return result;
-    }
-
-    /**
-     * Creates a temporary image file to be used by Tesseract to recognize text
-     *
-     * @param image     Image content
-     *
-     * @return A java.io.File object containing the specified image
-     *
-     * @throws OcrException If the file cannot be created properly and therefore no file
-     *         is available for the engine to process
-     */
-    private File createTemporaryFile(byte[] image) throws OcrException {
-        File file = new File(TMP_PREFIX + UUID.randomUUID() + ".png");
-        try {
-            Files.write(image, file);
-        } catch (IOException e) {
-            deleteTemporaryFile(file);
-            throw new OcrException("Could not create temporary file for image scan", e);
-        }
-        return file;
-    }
-
-    /**
-     * Deletes a file. Used to delete temporary files created for the engine to process. This method is nullSafe
-     *
-     * @param file  File to be deleted
-     */
-    private void deleteTemporaryFile(File file) {
-        if (file != null) {
-            if (!file.delete()) {
-                log.warn("Could not delete tmp file");
-            }
-        }
     }
 }
