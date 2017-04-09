@@ -1,9 +1,9 @@
 package com.utility.api.core.ocr.processor;
 
-import com.utility.api.core.ocr.utils.FileUtils;
-import org.apache.log4j.Logger;
+import lombok.extern.log4j.Log4j;
 import org.bytedeco.javacv.Java2DFrameConverter;
 import org.bytedeco.javacv.OpenCVFrameConverter;
+import org.springframework.stereotype.Component;
 
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -11,21 +11,31 @@ import java.io.IOException;
 import static org.bytedeco.javacpp.opencv_core.*;
 import static org.bytedeco.javacpp.opencv_imgproc.*;
 
+@Log4j
+@Component
 public class OpenCVProcessor {
-
-    private static final Logger log = Logger.getLogger(FileUtils.class);
-    private static final OpenCVProcessor instance = new OpenCVProcessor();
 
     private OpenCVFrameConverter.ToIplImage iplConverter = new OpenCVFrameConverter.ToIplImage();
     private Java2DFrameConverter frameConverter = new Java2DFrameConverter();
 
-    public static OpenCVProcessor getInstance() {
-        return instance;
-    }
-
-    private OpenCVProcessor() {
-    }
-
+    /**
+     * Processes an image in order to optimize it before using an OCR scan.
+     * The following steps are used :
+     *
+     * - Image is converted into a grayscale image
+     * - Then a GaussianBlur is applied
+     * - Image is turned into a binary version using an AdaptativeThreshold
+     * - A lesser GaussianBlur is applied
+     * - Image negative is obtained
+     * - Dilation is applied
+     * - And finally Erosion
+     *
+     * This process is probably going to suffer some modifications over time in order to optimize text recognition
+     *
+     * @param original  BufferedImage holding the image to be processed
+     *
+     * @throws IOException
+     */
     public BufferedImage getBinaryImage(BufferedImage original) throws IOException {
         try {
             IplImage image = iplConverter.convert(frameConverter.convert(original));

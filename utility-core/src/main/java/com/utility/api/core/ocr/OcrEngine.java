@@ -84,7 +84,7 @@ public class OcrEngine {
      * Check the media type of the file to be processed. If a PDF is found, then it's converted to a TIFF image for the
      * engine to process
      *
-     * Images are scaled using {@link ImageProcessor#scaleImage(byte[])} before returned to optimize the engine recognition
+     * Images are scaled using {@link ImageProcessor#processAndScale(byte[])} before returned to optimize the engine recognition
      *
      * @param image    The image to be processed
      *
@@ -97,7 +97,7 @@ public class OcrEngine {
         if (mime == null) {
             throw new OcrException("Unsupported media type");
         }
-        return processor.scaleImage(image);
+        return processor.processAndScale(image);
     }
 
     /**

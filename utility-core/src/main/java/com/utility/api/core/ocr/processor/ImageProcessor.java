@@ -3,6 +3,7 @@ package com.utility.api.core.ocr.processor;
 import com.utility.api.core.ocr.utils.SupportedMimeType;
 import lombok.extern.log4j.Log4j;
 import org.imgscalr.Scalr;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import javax.imageio.ImageIO;
@@ -11,15 +12,29 @@ import java.awt.image.RescaleOp;
 import java.io.*;
 import java.net.URLConnection;
 
-@Component
 @Log4j
+@Component
 public class ImageProcessor {
 
 	private static final int SAMPLE_SIZE = 50;
     private static final int TARGET_SIZE = 2000;
     private static final int MIN_SIZE = 1000;
 
-    public byte[] scaleImage(byte[] imageContent) {
+    private final OpenCVProcessor processor;
+
+    @Autowired
+    public ImageProcessor(OpenCVProcessor processor) {
+        this.processor = processor;
+    }
+
+    /**
+     * Converts the image into a binary image and scales it accordingly to optimize it for OCR purposes
+     *
+     * @param imageContent  Image content to be processed
+     *
+     * @return  Processed image content
+     */
+    public byte[] processAndScale(byte[] imageContent) {
 		try (ByteArrayInputStream bis = new ByteArrayInputStream(imageContent);
 				ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
             BufferedImage image = ImageIO.read(bis);
@@ -46,6 +61,16 @@ public class ImageProcessor {
 		return imageContent;
 	}
 
+    /**
+     * Calls {@link OpenCVProcessor#getBinaryImage(BufferedImage)} in order to obtain a binary image from the specified
+     * image
+     *
+     * @param image     Image to be processed
+     *
+     * @return  Another instance of BufferedImage holding the processed image
+     *
+     * @throws IOException
+     */
 	private BufferedImage getProcessedImage(BufferedImage image) throws IOException {
         ByteArrayInputStream bis = null;
         try (ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
@@ -53,14 +78,22 @@ public class ImageProcessor {
             ImageIO.write(image, SupportedMimeType.PNG.name().toLowerCase(), bos);
             bis = new ByteArrayInputStream(bos.toByteArray());
 
-            return OpenCVProcessor.getInstance().getBinaryImage(ImageIO.read(bis));
+            return processor.getBinaryImage(ImageIO.read(bis));
         } finally {
             if (bis != null) {
                 bis.close();
             }
+            image.flush();
         }
     }
 
+    /**
+     * Grabs a 50x50 sample from the image to determine if it lacks brightness by analyzing pixel luminance
+     *
+     * @param image     Image to be analyzed
+     *
+     * @return  True if the image is too dark
+     */
     private boolean isDark(BufferedImage image) {
         int darkCount = 0;
 
@@ -74,6 +107,11 @@ public class ImageProcessor {
         return darkCount > SAMPLE_SIZE * SAMPLE_SIZE / 2;
     }
 
+    /**
+     * Returns whether a pixel is under a luminance threshold
+     *
+     * @param color     pixel to be analyzed
+     */
     private boolean isDark(int color) {
         // extract each color component
         int red   = (color >>> 16) & 0xFF;
@@ -86,14 +124,29 @@ public class ImageProcessor {
         return luminance <= 0.7f;
     }
 
-    private Scalr.Mode getPreferredScaleMode(int originHeight, int originWidth) {
-        if (originHeight > originWidth) {
+    /**
+     * Decides if a picture should be scaled to width or height by comparing these two attributes
+     *
+     * @param height    Image height
+     * @param width     Image width
+     *
+     * @return  FIT_TO_WIDTH if the image width is less than its height, FIT_TO_HEIGHT otherwise
+     */
+    private Scalr.Mode getPreferredScaleMode(int height, int width) {
+        if (height > width) {
             return Scalr.Mode.FIT_TO_WIDTH;
         } else {
             return Scalr.Mode.FIT_TO_HEIGHT;
         }
     }
 
+    /**
+     * Analyzes the MimeType of a file by its content using {@link URLConnection#guessContentTypeFromStream(InputStream)}
+     *
+     * @param content   File content
+     *
+     * @return MimeType of the file by its content
+     */
     public SupportedMimeType getMimeType(byte[] content) {
 		try (InputStream input = new BufferedInputStream(new ByteArrayInputStream(content))) {
 			return SupportedMimeType.fromValue(URLConnection.guessContentTypeFromStream(input));

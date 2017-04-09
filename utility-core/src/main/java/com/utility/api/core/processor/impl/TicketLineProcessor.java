@@ -80,7 +80,7 @@ public class TicketLineProcessor implements RegisterProcessor<TicketLine> {
     private String cleanRawData(String rawData) {
         rawData = StringUtils.replaceChars(rawData, "'\"!¡?¿´·-", StringUtils.EMPTY);
         rawData = StringUtils.replaceAll(rawData, " \\. ", " ");
-        rawData = StringUtils.replaceAll(rawData, " \\. ", " ");
+        rawData = StringUtils.replaceAll(rawData, "(?<=\\d)+( *, *)(?=\\d+)", ",");
 
         return StringUtils.trimToEmpty(rawData);
     }
